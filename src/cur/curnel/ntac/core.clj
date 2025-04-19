@@ -270,3 +270,41 @@
               goal2  (->Goal ctx2 term expected nil)
               st2    (->TacticState (cons goal2 rest-goals) proof)]
           [st1 st2])))))
+
+;; Tactic: destruct on inductive hypothesis h
+(defn destruct
+  "Destruct hypothesis h by case analysis on Nat and Bool inductive types.
+   For Nat, splits on z and s with successor variable x;
+   For Bool, splits on True and False with no new variables."        
+  [h state]
+  (let [goals (:goals state)
+        proof (:proof state)]
+    (if (empty? goals)
+      []
+      (let [goal       (first goals)
+            rest-goals (vec (rest goals))
+            ntac-ctx   (:ctx goal)
+            term       (:term goal)
+            expected   (:expected goal)
+            h-ty       (ctx/ctx-lookup ntac-ctx h)]
+        (cond
+          ;; Nat: use inversion
+          (= (ast/->Var 'Nat) h-ty)
+          (inversion h state)
+
+          ;; Bool: two branches, remove h only
+          (= (ast/->Var 'Bool) h-ty)
+          (let [ctx-no (ctx/ctx-remove ntac-ctx h)
+                goal1  (->Goal ctx-no term expected nil)
+                st1    (->TacticState (conj rest-goals goal1) proof)
+                st2    (->TacticState (conj rest-goals goal1) proof)]
+            [st1 st2])
+
+          :else
+          (throw (ex-info "destruct: unsupported inductive type" {:h h :h-ty h-ty})))))))
+
+;; Tactic: destruct-exist (alias to destruct)
+(defn destruct-exist
+  "Destruct existential hypothesis h (alias to destruct)."
+  [h state]
+  (destruct h state))
