@@ -36,6 +36,7 @@ This will execute the entire test suite under `test/cur`.
 
 ## Quickstart Example
 
+~~~clojure
 ;; import core DSL and standard context
 (require '[cur.std :refer [std-ctx]]
          '[cur.curnel.ast :as ast]
@@ -56,6 +57,7 @@ This will execute the entire test suite under `test/cur`.
          exact))     ;; discharge remaining goal by assumption
 
 ;; `sym-proof` is now a vector of ASTs representing the proof term.
+~~~
 
 ## Contributing
 
