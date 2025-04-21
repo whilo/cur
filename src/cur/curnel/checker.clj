@@ -5,9 +5,9 @@
 ;;-----------------------------------------------------------------
 
  (ns cur.curnel.checker
-  (:require [cur.curnel.ast :as ast]
-            [cur.curnel.ntac.ctx])
-  (:import [cur.curnel.ast Var Universe Pi Lambda App Sigma Pair Fst Snd Let Constructor InductiveType Elim]))
+   (:require [cur.curnel.ast :as ast]
+             [cur.curnel.ntac.ctx])
+   (:import [cur.curnel.ast Var Universe Pi Lambda App Sigma Pair Fst Snd Let Constructor InductiveType Elim]))
 
 ;; Substitute occurrences of variable sym in term t with value v
 (defn substitute
@@ -191,12 +191,12 @@
   ;; Universe: Type n : Type (n+1)
   (ast/->Universe (inc (:level t))))
 
- (defmethod type-of Var
-   [ctx t]
+(defmethod type-of Var
+  [ctx t]
    ;; Variable: look up in context (supports both map and Ctx record)
-   (if-let [ty (cur.curnel.ntac.ctx/ctx-lookup ctx (:name t))]
-     ty
-     (throw (ex-info "Unbound variable" {:var t}))))
+  (if-let [ty (cur.curnel.ntac.ctx/ctx-lookup ctx (:name t))]
+    ty
+    (throw (ex-info "Unbound variable" {:var t}))))
 
 (defmethod type-of Lambda
   [ctx t]

@@ -1,5 +1,5 @@
 {:mvn/repos {"clojars" {:url "https://repo.clojars.org"}}
- :paths ["src" "test"]
+ :paths ["src" "resources" "test"]
  :deps {org.clojure/clojure {:mvn/version "1.10.3"}}
  :aliases
  {:test

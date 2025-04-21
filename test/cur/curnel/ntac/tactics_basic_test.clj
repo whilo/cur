@@ -21,9 +21,9 @@
   (let [A         (ast/->Var 'A)
         eq-proof  (ast/->App (ast/->App (ast/->Var 'refl) A) A)
         g         (core/->Goal (ctx/mk-empty-ctx)
-                              (ast/->Var 't)
-                              A
-                              nil)
+                               (ast/->Var 't)
+                               A
+                               nil)
         state     (core/->TacticState [g] [])
         [st1]     (core/rewrite eq-proof state)
         [st2]     (core/rewriteR eq-proof state)
@@ -49,7 +49,7 @@
       ;; second branch: h removed, x added of type Nat
       (is (nil? (ctx/ctx-lookup (:ctx g2) 'h)))
       (is (= (ast/->Var 'Nat) (ctx/ctx-lookup (:ctx g2) 'x))))))
-  
+
 (deftest destruct-basic-test
   "destruct on Nat hypothesis is alias to inversion"
   (let [ctx0  (ctx/mk-empty-ctx)

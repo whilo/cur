@@ -25,22 +25,22 @@
    Throws if goals remain at end."
   [ctx term expected & steps]
   (let [fns# (vec (for [step# steps]
-                     (if (seq? step#)
-                       (let [f#    (first step#)
-                             args# (rest step#)]
-                         `(fn [st#] (~(symbol "cur.curnel.ntac.core" (name f#)) ~@args# st#)))
-                       `(fn [st#] (~(symbol "cur.curnel.ntac.core" (name step#)) st#)))))]
+                    (if (seq? step#)
+                      (let [f#    (first step#)
+                            args# (rest step#)]
+                        `(fn [st#] (~(symbol "cur.curnel.ntac.core" (name f#)) ~@args# st#)))
+                      `(fn [st#] (~(symbol "cur.curnel.ntac.core" (name step#)) st#)))))]
     `(let [init#  (core/->TacticState [(core/->Goal ~ctx ~term ~expected nil)] [])
            tacts# ~fns#]
        (loop [states# [init#] tacts# tacts#]
-       (if (empty? tacts#)
-         (let [s# (first states#)]
-           (when (seq (:goals s#))
-             (throw (ex-info "Proof incomplete, goals remain" {:goals (:goals s#)})))
-           (:proof s#))
-         (let [t#   (first tacts#)
-               nxt# (mapcat t# states#)]
-           (recur nxt# (subvec tacts# 1))))))))
+         (if (empty? tacts#)
+           (let [s# (first states#)]
+             (when (seq (:goals s#))
+               (throw (ex-info "Proof incomplete, goals remain" {:goals (:goals s#)})))
+             (:proof s#))
+           (let [t#   (first tacts#)
+                 nxt# (mapcat t# states#)]
+             (recur nxt# (subvec tacts# 1))))))))
 
 ;; Macro: defproof
 (defmacro defproof

@@ -41,8 +41,6 @@
   (fn [state]
     (concat (t1 state) (t2 state))))
 
-;; Stub implementations for core tactics
-;; Tactic: intro
 (defn intro
   "Introduce a lambda/Pi in the first goal. Returns a seq of new states (0 or 1)."
   [state]
@@ -91,39 +89,31 @@
             (throw (ex-info "apply: given term is not a Pi"
                             {:term fn-term :type f-ty}))))))))
 
-
-;; Tactic: exact
-
-
- (defn exact
-   "If term t has exactly the expected type for the first goal, discharge it.
+(defn exact
+  "If term t has exactly the expected type for the first goal, discharge it.
     If the goal was produced by apply, wrap t with the original function."
-   ([state]
-    (let [goals (:goals state)
-          goal  (first goals)
-          t     (:term goal)]
-      (exact t state)))
-   ([t state]
-    (let [goals (:goals state)
-          proof (:proof state)]
-      (if (empty? goals)
-        []
-        (let [{:keys [ctx expected apply-fn]} (first goals)
-              rest-goals (vec (rest goals))]
-          (if apply-fn
+  ([state]
+   (let [goals (:goals state)
+         goal  (first goals)
+         t     (:term goal)]
+     (exact t state)))
+  ([t state]
+   (let [goals (:goals state)
+         proof (:proof state)]
+     (if (empty? goals)
+       []
+       (let [{:keys [ctx expected apply-fn]} (first goals)
+             rest-goals (vec (rest goals))]
+         (if apply-fn
             ;; If the goal was produced by apply, bypass type checking
-            (let [res-term (ast/->App apply-fn t)]
-              [(->TacticState rest-goals (conj proof res-term))])
+           (let [res-term (ast/->App apply-fn t)]
+             [(->TacticState rest-goals (conj proof res-term))])
             ;; Otherwise, check type and discharge
-            (let [ty (chk/type-of ctx t)]
-              (if (chk/equal-terms? ctx ty expected)
-                [(->TacticState rest-goals (conj proof t))]
-                []))))))))
-;; (defn assumption ...)
+           (let [ty (chk/type-of ctx t)]
+             (if (chk/equal-terms? ctx ty expected)
+               [(->TacticState rest-goals (conj proof t))]
+               []))))))))
 
-;; (defn assumption ...)
-;; Assumption tactic not yet implemented.
-;; Tactic: assumption
 (defn assumption
   "If the current goal's expected type matches any hypothesis in the context,
    discharge the goal by using that hypothesis. Returns one state per matching assumption."
@@ -144,7 +134,60 @@
              (filter some?)
              vec)))))
 
-;; Helper: substitute all occurrences of old-term with new-term in t
+;; Tactic that discharges a goal of form (== A x x) by applying `refl`.
+(defn reflexivity
+  "Tactic that discharges a goal of form (== A x x) by applying `refl`."
+  [state]
+  (let [goals      (:goals state)
+        proof      (:proof state)]
+    (if (empty? goals)
+      []
+      (let [goal       (first goals)
+            rest-goals (vec (rest goals))
+            ctx        (:ctx goal)
+            expected   (:expected goal)]
+        ;; expected must be (App mid y)
+        (if-not (instance? App expected)
+          (throw (ex-info "reflexivity: goal is not of form == A x x"
+                          {:expected expected}))
+          (let [{mid :fn y :arg} expected]
+            ;; mid must be (App inner x)
+            (if-not (instance? App mid)
+              (throw (ex-info "reflexivity: goal is not of form == A x x"
+                              {:expected expected}))
+              (let [{inner :fn x :arg} mid]
+                ;; inner must be Var '== and x=y
+                (if-not (and (instance? Var inner)
+                             (= '== (:name inner))
+                             (chk/equal-terms? ctx x y))
+                  (throw (ex-info "reflexivity: goal is not of form == A x x"
+                                  {:expected expected}))
+                  ;; build refl proof: (refl A x)
+                  (let [A  (:arg inner)
+                        pf (ast/->App (ast/->App (ast/->Var 'refl) A) x)]
+                    [(->TacticState rest-goals (conj proof pf))]))))))))))
+
+(defn assert
+  "Assert a new hypothesis `id` of type `ty`, splitting the current goal into:
+   1) a subgoal to prove `ty`;
+   2) the original goal under an extended context with `id` bound to `ty`.
+   Usage: (assert id ty)"
+  [id ty state]
+  (let [goals (:goals state)
+        proof (:proof state)]
+    (if (empty? goals)
+      []
+      (let [{:keys [ctx term expected]} (first goals)
+            rest-goals (vec (rest goals))
+            ;; Subgoal 1: prove the asserted type
+            g1 (->Goal ctx ty ty nil)
+            ;; Extended context with new hypothesis
+            ctx2 (ctx/ctx-add ctx id ty)
+            ;; Subgoal 2: original goal under extended context
+            g2 (->Goal ctx2 term expected nil)
+            new-goals (into [] (concat [g1 g2] rest-goals))]
+        [(->TacticState new-goals proof)]))))
+
 (defn- subst-term
   [t old new]
   (cond
@@ -181,7 +224,6 @@
                   (subst-term target old new)))
     :else t))
 
-;; Tactic: rewrite
 (defn rewrite
   "Rewrite the current goal's expected term by applying an equality proof.
    eq-proof must have type (== A lhs rhs).
@@ -212,7 +254,6 @@
             new-goal   (->Goal ntac-ctx term new-exp nil)]
         [(->TacticState (cons new-goal rest-goals) proof)]))))
 
-;; Tactic: reverse rewrite (rewriteR)
 (defn rewriteR
   "Reverse rewrite: given an equality proof eq-proof of (== A lhs rhs),
    replaces rhs with lhs in the expected term of the current goal."
@@ -242,7 +283,6 @@
             new-goal   (->Goal ntac-ctx term new-exp nil)]
         [(->TacticState (cons new-goal rest-goals) proof)]))))
 
-;; Tactic: inversion on Nat
 (defn inversion
   "Invert an inductive Nat hypothesis h: splits on z and s.
    For z-case, removes h; for s-case, removes h and adds x:Nat."
@@ -271,11 +311,10 @@
               st2    (->TacticState (cons goal2 rest-goals) proof)]
           [st1 st2])))))
 
-;; Tactic: destruct on inductive hypothesis h
 (defn destruct
   "Destruct hypothesis h by case analysis on Nat and Bool inductive types.
    For Nat, splits on z and s with successor variable x;
-   For Bool, splits on True and False with no new variables."        
+   For Bool, splits on True and False with no new variables."
   [h state]
   (let [goals (:goals state)
         proof (:proof state)]
@@ -303,7 +342,6 @@
           :else
           (throw (ex-info "destruct: unsupported inductive type" {:h h :h-ty h-ty})))))))
 
-;; Tactic: destruct-exist (alias to destruct)
 (defn destruct-exist
   "Destruct existential hypothesis h (alias to destruct)."
   [h state]
