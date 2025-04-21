@@ -19,7 +19,15 @@
 (defn register
   "Register Nat and its constructors into the context."
   [ctx]
-  (register-inductive ctx nat-decl))
+  (let [ctx0    (register-inductive ctx nat-decl)
+        ;; Register plus : Nat -> Nat -> Nat
+        plus-ty (ast/->Pi 'n (ast/->Var 'Nat)
+                          (ast/->Pi 'm (ast/->Var 'Nat) (ast/->Var 'Nat)))]
+    (-> ctx0
+        (assoc 'plus plus-ty)
+        (assoc 'mult    ; multiplication: Nat -> Nat -> Nat
+               (ast/->Pi 'm (ast/->Var 'Nat)
+                         (ast/->Pi 'n (ast/->Var 'Nat) (ast/->Var 'Nat)))))))
 
 (defn elim
   "Eliminator (recursor) for Nat.
@@ -29,3 +37,35 @@
    and n is the Nat value to eliminate."
   [motive z-case s-case n]
   (ast/->Elim 'Nat motive [z-case s-case] n))
+
+;; Addition on Nat via the recursor
+(defn plus
+  "Addition on Nat: plus n m = elim n (λ [x : Nat] Nat) m (λ [x : Nat] [pm : Nat] (s pm))."
+  [n m]
+  (elim
+    ;; motive: λ [x : Nat] Nat
+   (ast/->Lambda 'x (ast/->Var 'Nat) (ast/->Var 'Nat))
+    ;; z-case: m
+   m
+    ;; s-case: λ [x : Nat] (λ [pm : Nat] (s pm))
+   (ast/->Lambda 'x (ast/->Var 'Nat)
+                 (ast/->Lambda 'pm (ast/->Var 'Nat)
+                               (ast/->App (ast/->Var 's) (ast/->Var 'pm))))
+    ;; target: n
+   n))
+
+;; Multiplication on Nat via the recursor
+(defn mult
+  "Multiplication on Nat: mult m n = elim m (λ [x : Nat] Nat) z (λ [x : Nat] [p : Nat] (plus n p)) m"
+  [m n]
+  (elim
+    ;; motive: λ [x : Nat] Nat
+   (ast/->Lambda 'x (ast/->Var 'Nat) (ast/->Var 'Nat))
+    ;; z-case: 0 (z)
+   (ast/->Var 'z)
+    ;; s-case: λ [x : Nat] (λ [p : Nat] (plus n p))
+   (ast/->Lambda 'x (ast/->Var 'Nat)
+                 (ast/->Lambda 'p (ast/->Var 'Nat)
+                               (ast/->App (ast/->App (ast/->Var 'plus) n) (ast/->Var 'p))))
+    ;; target: m
+   m))

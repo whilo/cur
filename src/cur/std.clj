@@ -7,6 +7,7 @@
   "Assembly of standard library modules into a single context."
   (:require [cur.std.bool :as bool]
             [cur.std.nat :as nat]
+            [cur.std.day :as day]
             [cur.std.maybe :as maybe]
             [cur.std.list :as list]
             [cur.std.equality :as eq]
@@ -18,11 +19,10 @@
   (-> {}
       bool/register
       nat/register
+      day/register
       maybe/register
       list/register
       eq/register
       sigma/register
-      ;; sigma/register
-      ;; eq/register
-      ;; tc/register
+      ;; typeclass registry may follow
       ))

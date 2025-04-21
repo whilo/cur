@@ -232,22 +232,35 @@
             ntac-ctx   (:ctx goal)
             term       (:term goal)
             expected   (:expected goal)
-            ;; pattern-match refl proof AST: (App (App (Var 'refl) A) x)
-            _          (when-not (and (instance? App eq-proof)
-                                      (let [inner (:fn eq-proof)]
-                                        (and (instance? App inner)
-                                             (let [ctor (:fn inner)]
-                                               (and (instance? Var ctor)
-                                                    (= 'refl (:name ctor)))))))
-                         (throw (ex-info "rewrite: eq-proof is not refl proof"
-                                         {:eq-proof eq-proof})))
-            ;; lhs is the second arg of the inner App, rhs is the arg of the outer App
-            lhs        (:arg (:fn eq-proof))
-            rhs        (:arg eq-proof)
+            ;; Determine lhs and rhs depending on proof form
+            [lhs rhs]
+            (cond
+              ;; refl proof AST: (App (App (Var 'refl) A) x)
+              (and (instance? App eq-proof)
+                   (let [mid  (:fn eq-proof)
+                         head (:fn mid)]
+                     (and (instance? App mid)
+                          (instance? Var head)
+                          (= 'refl (:name head)))))
+              (let [mid (:fn eq-proof)]
+                ;; lhs is the second arg of inner App, rhs is the arg of outer App
+                [(:arg mid) (:arg eq-proof)])
+              ;; hypothesis var proof: type-of var must be equality
+              (instance? Var eq-proof)
+              (let [ty  (ctx/ctx-lookup ntac-ctx (:name eq-proof))
+                    mid (:fn ty)]
+                [(:arg mid) (:arg ty)])
+              :else
+              (throw (ex-info "rewrite: eq-proof is not equality proof"
+                              {:eq-proof eq-proof})))
             new-exp    (subst-term expected lhs rhs)
             new-goal   (->Goal ntac-ctx term new-exp nil)]
         [(->TacticState (cons new-goal rest-goals) proof)]))))
 
+;; Declare forward references for composite tactics
+(declare simpl)
+
+;; Reverse rewrite: ...
 (defn rewriteR
   "Reverse rewrite: given an equality proof eq-proof of (== A lhs rhs),
    replaces rhs with lhs in the expected term of the current goal."
@@ -261,21 +274,41 @@
             ntac-ctx   (:ctx goal)
             term       (:term goal)
             expected   (:expected goal)
-            ;; validate refl proof AST: (App (App (Var 'refl) A) x)
-            _          (when-not (and (instance? App eq-proof)
-                                      (let [inner (:fn eq-proof)]
-                                        (and (instance? App inner)
-                                             (let [ctor (:fn inner)]
-                                               (and (instance? Var ctor)
-                                                    (= 'refl (:name ctor)))))))
-                         (throw (ex-info "rewriteR: eq-proof is not refl proof"
-                                         {:eq-proof eq-proof})))
-            ;; rhs is the arg of the outer App, lhs is second arg of inner App
-            lhs        (:arg (:fn eq-proof))
-            rhs        (:arg eq-proof)
+            ;; Determine lhs and rhs depending on proof form
+            [lhs rhs]
+            (cond
+              ;; refl proof AST: (App (App (Var 'refl) A) x)
+              (and (instance? App eq-proof)
+                   (let [mid  (:fn eq-proof)
+                         head (:fn mid)]
+                     (and (instance? App mid)
+                          (instance? Var head)
+                          (= 'refl (:name head)))))
+              (let [mid (:fn eq-proof)]
+                ;; reverse: rhs is the arg of inner, lhs is the arg of outer
+                [(:arg eq-proof) (:arg mid)])
+              ;; hypothesis var proof: lhs is mid.arg, rhs is ty.arg
+              (instance? Var eq-proof)
+              (let [ty  (ctx/ctx-lookup ntac-ctx (:name eq-proof))
+                    mid (:fn ty)]
+                [(:arg mid) (:arg ty)])
+              :else
+              (throw (ex-info "rewriteR: eq-proof is not equality proof"
+                              {:eq-proof eq-proof})))
             new-exp    (subst-term expected rhs lhs)
             new-goal   (->Goal ntac-ctx term new-exp nil)]
         [(->TacticState (cons new-goal rest-goals) proof)]))))
+
+;; Composite ML-rewrite: rewrite, normalize plus and mult, then reflexivity
+(defn ml-rewrite
+  "Composite tactic: rewrite using eq-proof, simplify twice, then reflexivity."
+  [eq-proof state]
+  (->> (rewrite eq-proof state)
+       (mapcat cur.curnel.ntac.core/simpl)
+       (mapcat cur.curnel.ntac.core/simpl)
+       (mapcat cur.curnel.ntac.core/reflexivity)))
+
+(def by-ml-rewrite ml-rewrite)
 
 (defn inversion
   "Invert an inductive Nat hypothesis h: splits on z and s.
@@ -340,6 +373,10 @@
   "Destruct existential hypothesis h (alias to destruct)."
   [h state]
   (destruct h state))
+
+;; Aliases for DSL rewriting tactics
+(def by-rewrite rewrite)
+(def by-rewriteL rewriteR)
 
 ;; Tactic that moves a hypothesis into the goal as a Pi-abstraction.
 (defn generalize

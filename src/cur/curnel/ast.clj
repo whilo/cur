@@ -58,3 +58,25 @@
 ;; Eliminator (fold) for an inductive type
 (defrecord Elim [name motive methods target]
   Term)
+
+;;-----------------------------------------------------------------
+;; Sugar helpers for constructing nested Pi and arrow types
+;;-----------------------------------------------------------------
+(defn forall*
+  "Build nested Pi-types from a seq of [id type] bindings and a body term."
+  [bindings body]
+  (reduce (fn [b [id ty]]
+            (->Pi id ty b))
+          body
+          (reverse bindings)))
+
+(defn arrow*
+  "Sugar: non-dependent arrow type A1 -> A2 -> ... -> An as nested Pi with fresh names."
+  [& types]
+  (let [args (butlast types)
+        ret  (last types)]
+    (reduce (fn [b dom]
+              (let [v (gensym "_arg")]
+                (->Pi v dom b)))
+            ret
+            (reverse args))))

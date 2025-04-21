@@ -116,6 +116,29 @@
             f* (nf ctx fn)
             a* (nf ctx arg)]
         (ast/->App f* a*))
+      ;; Eliminate inductive recursor for Nat (plus, etc.)
+      (instance? Elim t*)
+      (let [{:keys [name motive methods target]} t*]
+        (if (= 'Nat name)
+          (let [[z-case s-case] methods]
+            (cond
+              ;; zero case: target is variable z
+              (and (instance? Var target) (= 'z (:name target)))
+              z-case
+              ;; successor case: target is (App (Var 's) x)
+              (and (instance? App target)
+                   (let [inner (:fn target)]
+                     (and (instance? Var inner) (= 's (:name inner)))))
+              (let [x   (:arg target)
+                    ;; recursive reduction on predecessor
+                    rec (nf ctx (ast/->Elim name motive methods x))
+                    ;; apply s-case: (App (App s-case x) rec)
+                    step1 (ast/->App s-case x)
+                    step2 (ast/->App step1 rec)]
+                (nf ctx step2))
+              :else t*))
+          t*))
+      ;; Fallback: not equal or other terms remain as is
       :else t*)))
 
 ;; Alpha-equivalence of two terms with environment mapping symbols of t1 to t2

@@ -12,7 +12,8 @@
 ;;-----------------------------------------------------------------
 (ns cur.curnel.ntac.dsl
   "User-facing macros for proof scripting with NTac."
-  (:require [cur.curnel.ntac.core :as core]))
+  (:require [cur.curnel.ntac.core :as core]
+            [cur.curnel.ast :as ast]))
 
 ;; Macro: proof
 (defmacro proof
@@ -24,12 +25,16 @@
        exact)
    Throws if goals remain at end."
   [ctx term expected & steps]
-  (let [fns# (vec (for [step# steps]
-                    (if (seq? step#)
-                      (let [f#    (first step#)
-                            args# (rest step#)]
-                        `(fn [st#] (~(symbol "cur.curnel.ntac.core" (name f#)) ~@args# st#)))
-                      `(fn [st#] (~(symbol "cur.curnel.ntac.core" (name step#)) st#)))))]
+  (let [wrap-arg# (fn [a#]
+                    (if (symbol? a#)
+                      `(ast/->Var '~a#)
+                      a#))
+        fns#     (vec (for [step# steps]
+                        (if (seq? step#)
+                          (let [f#    (first step#)
+                                args# (map wrap-arg# (rest step#))]
+                            `(fn [st#] (~(symbol "cur.curnel.ntac.core" (name f#)) ~@args# st#)))
+                          `(fn [st#] (~(symbol "cur.curnel.ntac.core" (name step#)) st#)))))]
     `(let [init#  (core/->TacticState [(core/->Goal ~ctx ~term ~expected nil)] [])
            tacts# ~fns#]
        (loop [states# [init#] tacts# tacts#]
