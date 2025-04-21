@@ -80,3 +80,11 @@
                 (->Pi v dom b)))
             ret
             (reverse args))))
+  
+;; Multi-arity application: nested AST Apps when given more than two args.
+(def ^:private app2 ->App)
+(defn ->App
+  "Build nested application AST nodes for multiple arguments."
+  ([f a] (app2 f a))
+  ([f a & more]
+   (reduce ->App (app2 f a) more)))
