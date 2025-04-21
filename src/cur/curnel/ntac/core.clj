@@ -138,34 +138,28 @@
 (defn reflexivity
   "Tactic that discharges a goal of form (== A x x) by applying `refl`."
   [state]
-  (let [goals      (:goals state)
-        proof      (:proof state)]
+  (let [goals (:goals state)
+        proof (:proof state)]
     (if (empty? goals)
       []
-      (let [goal       (first goals)
-            rest-goals (vec (rest goals))
-            ctx        (:ctx goal)
-            expected   (:expected goal)]
-        ;; expected must be (App mid y)
-        (if-not (instance? App expected)
+      (let [{:keys [ctx expected]} (first goals)
+            rest-goals (vec (rest goals))]
+        ;; Check that expected is of form (== A x x)
+        (if (and (instance? App expected)
+                 (instance? App (:fn expected))
+                 (instance? App (-> expected :fn :fn))
+                 (instance? Var (-> expected :fn :fn :fn))
+                 (= '== (-> expected :fn :fn :fn :name))
+                 (let [x (-> expected :fn :arg)
+                       y (:arg expected)]
+                   (chk/equal-terms? ctx x y)))
+          ;; build refl proof: (refl A x)
+          (let [A  (-> expected :fn :fn :arg)
+                x  (-> expected :fn :arg)
+                pf (ast/->App (ast/->App (ast/->Var 'refl) A) x)]
+            [(->TacticState rest-goals (conj proof pf))])
           (throw (ex-info "reflexivity: goal is not of form == A x x"
-                          {:expected expected}))
-          (let [{mid :fn y :arg} expected]
-            ;; mid must be (App inner x)
-            (if-not (instance? App mid)
-              (throw (ex-info "reflexivity: goal is not of form == A x x"
-                              {:expected expected}))
-              (let [{inner :fn x :arg} mid]
-                ;; inner must be Var '== and x=y
-                (if-not (and (instance? Var inner)
-                             (= '== (:name inner))
-                             (chk/equal-terms? ctx x y))
-                  (throw (ex-info "reflexivity: goal is not of form == A x x"
-                                  {:expected expected}))
-                  ;; build refl proof: (refl A x)
-                  (let [A  (:arg inner)
-                        pf (ast/->App (ast/->App (ast/->Var 'refl) A) x)]
-                    [(->TacticState rest-goals (conj proof pf))]))))))))))
+                          {:expected expected})))))))
 
 (defn assert
   "Assert a new hypothesis `id` of type `ty`, splitting the current goal into:
@@ -346,3 +340,76 @@
   "Destruct existential hypothesis h (alias to destruct)."
   [h state]
   (destruct h state))
+
+;; Tactic that moves a hypothesis into the goal as a Pi-abstraction.
+(defn generalize
+  "Tactic that abstracts over hypothesis id: removes id from context and
+   wraps the expected type with a Pi binder for id."
+  [id state]
+  (let [{:keys [goals proof]} state]
+    (if (empty? goals)
+      []
+      (let [goal       (first goals)
+            rest-goals (vec (rest goals))
+            {:keys [ctx term expected]} goal
+            ty         (ctx/ctx-lookup ctx id)]
+        (if ty
+          (let [ctx2     (ctx/ctx-remove ctx id)
+                new-exp  (ast/->Pi id ty expected)
+                new-goal (->Goal ctx2 term new-exp nil)]
+            [(->TacticState (cons new-goal rest-goals) proof)])
+          (throw (ex-info "generalize: hypothesis not found" {:id id})))))))
+
+;; Tactic that simplifies (normalizes) the expected type of the current goal.
+(defn simpl
+  "Tactic that replaces the expected type of the first goal with its normal form."
+  [state]
+  (let [{:keys [goals proof]} state]
+    (if (empty? goals)
+      []
+      (let [goal       (first goals)
+            rest-goals (vec (rest goals))
+            {:keys [ctx term expected]} goal
+            new-exp    (chk/nf ctx expected)
+            new-goal   (->Goal ctx term new-exp nil)]
+        [(->TacticState (cons new-goal rest-goals) proof)]))))
+
+;; Tactic that repeatedly applies intro to eliminate all Pi binders.
+(defn implicit
+  "Tactic that introduces all leading Pi quantifiers in the goal.
+   Equivalent to repeating `intro` until the expected type is not a Pi."
+  [state]
+  (letfn [(step [st]
+            (let [goals (:goals st)]
+              (if (and (seq goals)
+                       (instance? Pi (:expected (first goals))))
+                (mapcat step (intro st))
+                [st])))]
+    (step state)))
+
+;; Tactic combinator: try to apply t, but on failure or no result, return original state.
+(defn try
+  "Tactic combinator: attempt t; if it fails or yields no states, return the input state."
+  [t]
+  (fn [state]
+    (try
+      (let [res (t state)]
+        (if (seq res) res [state]))
+      (catch Exception _#
+        [state]))))
+
+;; Tactic combinator: extend the context for the next tactic.
+(defn with-ctx
+  "Tactic combinator: extend context by binding id to ty when running t on the first goal."
+  [id ty t]
+  (fn [state]
+    (let [{:keys [goals proof]} state]
+      (if (empty? goals)
+        []
+        (let [goal       (first goals)
+              rest-goals (vec (rest goals))
+              {:keys [ctx term expected]} goal
+              ctx2       (ctx/ctx-add ctx id ty)
+              new-goal   (->Goal ctx2 term expected nil)
+              new-state  (->TacticState (cons new-goal rest-goals) proof)]
+          (t new-state))))))
