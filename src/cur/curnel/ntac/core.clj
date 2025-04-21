@@ -387,8 +387,8 @@
                 [st])))]
     (step state)))
 
-;; Tactic combinator: try to apply t, but on failure or no result, return original state.
-(defn try
+;; Tactic combinator: tac-try to apply a tactic, returning the original state on failure or no result.
+(defn tac-try
   "Tactic combinator: attempt t; if it fails or yields no states, return the input state."
   [t]
   (fn [state]
