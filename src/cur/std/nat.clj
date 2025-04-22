@@ -16,18 +16,37 @@
                [z Nat]
                [s (Pi [x Nat] Nat)])))
 
+;;-----------------------------------------------------------------
+;; natural-number less-or-equal relation (le)
+;;-----------------------------------------------------------------
+(def le-decl
+  "Inductive declaration for `le`: Nat × Nat → Type 0 (n ≤ m)."
+  (parse-term
+   '(Inductive le [[n Nat] [m Nat]] (Type 0)
+               [le-n (Pi [n Nat] (le n n))]
+               [le-s (Pi [n Nat] (Pi [m Nat] (le n m) (le n (s m))))])))
+
 (defn register
   "Register Nat and its constructors into the context."
   [ctx]
   (let [ctx0    (register-inductive ctx nat-decl)
-        ;; Register plus : Nat -> Nat -> Nat
-        plus-ty (ast/->Pi 'n (ast/->Var 'Nat)
-                          (ast/->Pi 'm (ast/->Var 'Nat) (ast/->Var 'Nat)))]
-    (-> ctx0
+        ctx1    (register-inductive ctx0 le-decl)
+        ;; plus : Nat -> Nat -> Nat
+        plus-ty  (ast/->Pi 'n (ast/->Var 'Nat)
+                           (ast/->Pi 'm (ast/->Var 'Nat)
+                                     (ast/->Var 'Nat)))
+        ;; mult : Nat -> Nat -> Nat
+        mult-ty (ast/->Pi 'm (ast/->Var 'Nat)
+                          (ast/->Pi 'n (ast/->Var 'Nat)
+                                    (ast/->Var 'Nat)))
+        ;; leb  : Nat -> Nat -> Bool
+        leb-ty  (ast/->Pi 'n (ast/->Var 'Nat)
+                          (ast/->Pi 'm (ast/->Var 'Nat)
+                                    (ast/->Var 'Bool)))]
+    (-> ctx1
         (assoc 'plus plus-ty)
-        (assoc 'mult    ; multiplication: Nat -> Nat -> Nat
-               (ast/->Pi 'm (ast/->Var 'Nat)
-                         (ast/->Pi 'n (ast/->Var 'Nat) (ast/->Var 'Nat)))))))
+        (assoc 'mult mult-ty)
+        (assoc 'leb  leb-ty))))
 
 (defn elim
   "Eliminator (recursor) for Nat.
@@ -69,3 +88,19 @@
                                (plus n (ast/->Var 'p))))
     ;; target: m
    m))
+
+;; Boolean less-or-equal via Nat recursor: leb n m
+(defn leb
+  "Boolean less-or-equal on Nat: returns True if n ≤ m, else False."
+  [n m]
+  (elim
+    ;; motive: λ [x : Nat] Bool
+   (ast/->Lambda 'x (ast/->Var 'Nat) (ast/->Var 'Bool))
+    ;; zero-case: True
+   (ast/->Var 'True)
+    ;; succ-case: λ [x : Nat] [b : Bool] b
+   (ast/->Lambda 'x (ast/->Var 'Nat)
+                 (ast/->Lambda 'b (ast/->Var 'Bool)
+                               (ast/->Var 'b)))
+    ;; scrutinee: n
+   n))

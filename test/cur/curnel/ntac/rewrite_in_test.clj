@@ -20,8 +20,8 @@
           eq1        (ast/->App (ast/->App (ast/->App (ast/->Var '==) A) x) y)
           eq2        (ast/->App (ast/->App (ast/->App (ast/->Var '==) A) y) z)
           ctx1       (-> std-ctx
-                        (assoc 'H1 eq1)
-                        (assoc 'H2 eq2))
+                         (assoc 'H1 eq1)
+                         (assoc 'H2 eq2))
           goal       (core/->Goal ctx1 nil nil nil)
           state      (core/->TacticState [goal] [])
           ;; use hypothesis H2 as equality proof

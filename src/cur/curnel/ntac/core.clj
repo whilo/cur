@@ -331,7 +331,7 @@
               (let [new-g (first (:goals st))
                     new-exp (ast/->Pi param domain (:expected new-g))]
                 (->TacticState (cons (->Goal ctx term new-exp nil) rest-goals)
-                                (:proof st)))))
+                               (:proof st)))))
           (throw (ex-info "rewrite-forall: expected type is not Pi" {:expected expected})))))))
 
 (def by-ml-rewrite ml-rewrite)
@@ -399,6 +399,43 @@
   "Destruct existential hypothesis h (alias to destruct)."
   [h state]
   (destruct h state))
+
+;; Tactic: induction on a Nat hypothesis, yielding base and step cases
+(defn induction
+  "Perform induction on hypothesis `h-term` of type Nat.
+   Splits into base case (h = z) and step case (h = s x) with induction hypothesis `IH`."
+  [h-term state]
+  (let [goals (:goals state)
+        proof (:proof state)]
+    (if (empty? goals)
+      []
+      (let [goal       (first goals)
+            rest-goals (vec (rest goals))
+            {:keys [ctx term expected]} goal
+            h-name     (:name h-term)
+            h-ty       (ctx/ctx-lookup ctx h-name)]
+        ;; check hypothesis type
+        (when-not (and (instance? Var h-ty)
+                       (= 'Nat (:name h-ty)))
+          (throw (ex-info "induction: hypothesis is not Nat"
+                          {:h h-term :h-ty h-ty})))
+        ;; Base case: remove h
+        (let [ctx0    (ctx/ctx-remove ctx h-name)
+              g-base  (->Goal ctx0 term expected nil)
+              st-base (->TacticState (conj rest-goals g-base) proof)
+              ;; Step case: remove h, bind x:Nat, bind IH for expected at x
+              x-name  'x
+              ctx1    (-> ctx
+                          (ctx/ctx-remove h-name)
+                          (ctx/ctx-add x-name (ast/->Var 'Nat)))
+              ;; compute IH type by substituting h -> x in expected
+              lhs     h-term
+              rhs     (ast/->Var x-name)
+              ih-type (subst-term expected lhs rhs)
+              ctx2    (ctx/ctx-add ctx1 'IH ih-type)
+              g-step  (->Goal ctx2 term expected nil)
+              st-step (->TacticState (conj rest-goals g-step) proof)]
+          [st-base st-step])))))
 
 ;; Aliases for DSL rewriting tactics
 (def by-rewrite rewrite)

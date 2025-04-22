@@ -18,11 +18,11 @@
         refl     (ast/->Var 'refl)
         ;; term: λ [n:Nat] (refl Nat n)
         term     (ast/->Lambda 'n Nat
-                              (ast/->App (ast/->App refl Nat) n))
+                               (ast/->App (ast/->App refl Nat) n))
         ;; expected type: ∀ [n:Nat] == Nat (plus zero n) n
         eq-inner (ast/->App (ast/->App (ast/->App (ast/->Var '==) Nat)
-                                        (plus zero n))
-                             n)
+                                       (plus zero n))
+                            n)
         expected (ast/forall* [['n Nat]] eq-inner)
         ;; run proof: intro, reflexivity
         pf       (proof std-ctx term expected intro reflexivity)]

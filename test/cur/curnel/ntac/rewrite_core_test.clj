@@ -6,34 +6,34 @@
 ;;-----------------------------------------------------------------
  (ns cur.curnel.ntac.rewrite-core-test
    "Unit tests for core inductive eliminator functionality."
-  (:require [clojure.test :refer :all]
-            [cur.curnel.ast :as ast]
-            [cur.curnel.checker :as chk]
-            [cur.curnel.ntac.core :as core]
-            [cur.std :refer [std-ctx]]))
+   (:require [clojure.test :refer :all]
+             [cur.curnel.ast :as ast]
+             [cur.curnel.checker :as chk]
+             [cur.curnel.ntac.core :as core]
+             [cur.std :refer [std-ctx]]))
 
- (deftest nat-elim-zero-case
-   (testing "Nat eliminator zero-case returns the first method"
-     (let [z      (ast/->Var 'z)
-           zcase  (ast/->Var 'zc)
-           scase  (ast/->Var 'sc)
-           motive (ast/->Lambda 'x (ast/->Var 'Nat) (ast/->Var 'Nat))
-           elim   (ast/->Elim 'Nat motive [zcase scase] z)
-           result (chk/nf std-ctx elim)]
-       (is (= zcase result)))))
+(deftest nat-elim-zero-case
+  (testing "Nat eliminator zero-case returns the first method"
+    (let [z      (ast/->Var 'z)
+          zcase  (ast/->Var 'zc)
+          scase  (ast/->Var 'sc)
+          motive (ast/->Lambda 'x (ast/->Var 'Nat) (ast/->Var 'Nat))
+          elim   (ast/->Elim 'Nat motive [zcase scase] z)
+          result (chk/nf std-ctx elim)]
+      (is (= zcase result)))))
 
- (deftest nat-elim-succ-case
-   (testing "Nat eliminator succ-case applies second method and recurses"
-     (let [z        (ast/->Var 'z)
-           scase    (ast/->Var 'sc)
-           zcase    (ast/->Var 'zc)
-           motive   (ast/->Lambda 'x (ast/->Var 'Nat) (ast/->Var 'Nat))
-           target   (ast/->App (ast/->Var 's) z)
-           elim     (ast/->Elim 'Nat motive [zcase scase] target)
-           result   (chk/nf std-ctx elim)
+(deftest nat-elim-succ-case
+  (testing "Nat eliminator succ-case applies second method and recurses"
+    (let [z        (ast/->Var 'z)
+          scase    (ast/->Var 'sc)
+          zcase    (ast/->Var 'zc)
+          motive   (ast/->Lambda 'x (ast/->Var 'Nat) (ast/->Var 'Nat))
+          target   (ast/->App (ast/->Var 's) z)
+          elim     (ast/->Elim 'Nat motive [zcase scase] target)
+          result   (chk/nf std-ctx elim)
            ;; expected: (App (App scase z) zcase)
-           expected (ast/->App (ast/->App scase z) zcase)]
-       (is (= expected result)))))
+          expected (ast/->App (ast/->App scase z) zcase)]
+      (is (= expected result)))))
 
 (deftest rewrite-tactic-basic
   (testing "Tactic-level rewrite replaces LHS with RHS in goal expected"
@@ -106,13 +106,13 @@
           plus1n  (ast/->App (ast/->App (ast/->Var 'plus) one) n)
           ;; flipped H: (== Nat (s n) m)
           eqp     (ast/->App (ast/->App (ast/->App (ast/->Var '==) Nat)
-                                       (ast/->App (ast/->Var 's) n))
-                            m)
+                                        (ast/->App (ast/->Var 's) n))
+                             m)
           ctx1    (-> std-ctx (assoc 'n Nat) (assoc 'm Nat) (assoc 'H eqp))
           ;; initial expected: == Nat (mult m plus1n) (mult m m)
           eq1     (ast/->App (ast/->App (ast/->App (ast/->Var '==) Nat)
                                         (ast/->App (ast/->App (ast/->Var 'mult) m) plus1n))
-                           (ast/->App (ast/->App (ast/->Var 'mult) m) m))
+                             (ast/->App (ast/->App (ast/->Var 'mult) m) m))
           state   (core/->TacticState [(core/->Goal ctx1 nil eq1 nil)] [])
           [st1]   (core/rewrite (ast/->Var 'H) state)
           got     (-> st1 :goals first :expected)]
