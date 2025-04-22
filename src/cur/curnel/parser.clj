@@ -87,6 +87,21 @@
               target-term   (parse-term target-form)]
           (ast/->Elim type-name motive-term methods target-term))
 
+        ;; Addition on Nat: (plus n m) via stdlib builder
+        (= op 'plus)
+        (let [[n m] args
+              plus-fn (do (require 'cur.std.nat)
+                          (ns-resolve 'cur.std.nat 'plus))]
+          (plus-fn (parse-term n) (parse-term m)))
+        
+        ;; Multiplication on Nat: (mult m n) via stdlib builder
+        (= op 'mult)
+        (let [[m n] args
+              mult-fn (do (require 'cur.std.nat)
+                           (ns-resolve 'cur.std.nat 'mult))]
+          (mult-fn (parse-term m) (parse-term n)))
+
+
         ;; Application: (f x y ...) => (((f x) y) ...)
         :else
         (let [terms (map parse-term form)]

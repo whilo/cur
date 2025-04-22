@@ -7,7 +7,8 @@
   "Core tactics definitions: goal state, tactic monad, basic tactics."
   (:require [cur.curnel.ast :as ast]
             [cur.curnel.checker :as chk]
-            [cur.curnel.ntac.ctx :as ctx])
+            [cur.curnel.ntac.ctx :as ctx]
+            [cur.std :refer [std-ctx]])
   (:import [cur.curnel.ast Var Universe Pi Lambda App Sigma Pair Fst Snd Let Elim]))
 
 ;; A single proof goal: context, term to prove, expected type
@@ -144,22 +145,24 @@
       []
       (let [{:keys [ctx expected]} (first goals)
             rest-goals (vec (rest goals))]
-        ;; Check that expected is of form (== A x x)
-        (if (and (instance? App expected)
-                 (instance? App (:fn expected))
-                 (instance? App (-> expected :fn :fn))
-                 (instance? Var (-> expected :fn :fn :fn))
-                 (= '== (-> expected :fn :fn :fn :name))
-                 (let [x (-> expected :fn :arg)
-                       y (:arg expected)]
-                   (chk/equal-terms? ctx x y)))
-          ;; build refl proof: (refl A x)
-          (let [A  (-> expected :fn :fn :arg)
-                x  (-> expected :fn :arg)
-                pf (ast/->App (ast/->App (ast/->Var 'refl) A) x)]
-            [(->TacticState rest-goals (conj proof pf))])
-          (throw (ex-info "reflexivity: goal is not of form == A x x"
-                          {:expected expected})))))))
+        ;; Normalize the expected equality first
+        (let [exp* (chk/nf std-ctx expected)]
+          ;; Check that exp* is of form (== A x x)
+          (if (and (instance? App exp*)
+                   (instance? App (:fn exp*))
+                   (instance? App (-> exp* :fn :fn))
+                   (instance? Var (-> exp* :fn :fn :fn))
+                   (= '== (-> exp* :fn :fn :fn :name))
+                   (let [x    (-> exp* :fn :arg)
+                         y    (:arg exp*)]
+                     (chk/equal-terms? ctx x y)))
+            ;; build refl proof: (refl A x)
+            (let [A  (-> exp* :fn :fn :arg)
+                  x  (-> exp* :fn :arg)
+                  pf (ast/->App (ast/->App (ast/->Var 'refl) A) x)]
+              [(->TacticState rest-goals (conj proof pf))])
+            (throw (ex-info "reflexivity: goal is not of form == A x x"
+                            {:expected exp*}))))))))
 
 (defn assert
   "Assert a new hypothesis `id` of type `ty`, splitting the current goal into:
@@ -407,7 +410,10 @@
       (let [goal       (first goals)
             rest-goals (vec (rest goals))
             {:keys [ctx term expected]} goal
-            new-exp    (chk/nf ctx expected)
+            ;; determine normalization context: if this is an NTac proof Ctx, use the global std-ctx;
+            ;; otherwise (ctx is already a kernel context map) use ctx directly
+            tctx       (if (instance? cur.curnel.ntac.ctx.Ctx ctx) std-ctx ctx)
+            new-exp    (chk/nf tctx expected)
             new-goal   (->Goal ctx term new-exp nil)]
         [(->TacticState (cons new-goal rest-goals) proof)]))))
 
@@ -450,3 +456,23 @@
               new-goal   (->Goal ctx2 term expected nil)
               new-state  (->TacticState (cons new-goal rest-goals) proof)]
           (t new-state))))))
+
+(defn auto
+  "Automatic proof search: try `assumption` first, then `reflexivity` on the current goal."
+  [state]
+  (let [;; attempt to discharge by assumption
+        as-res (assumption state)]
+    (if (seq as-res)
+      as-res
+      ;; otherwise attempt reflexivity, catching failures
+      (try
+        (let [rf-res (reflexivity state)]
+          (if (seq rf-res) rf-res []))
+        (catch Exception _#
+          [])))))
+
+(defn interactive
+  "Interactive proof tactic: introduce all Pi binders, then discharge by assumption."
+  [state]
+  (->> (implicit state)
+       (mapcat assumption)))

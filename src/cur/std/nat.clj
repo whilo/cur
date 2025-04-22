@@ -66,6 +66,6 @@
     ;; s-case: λ [x : Nat] (λ [p : Nat] (plus n p))
    (ast/->Lambda 'x (ast/->Var 'Nat)
                  (ast/->Lambda 'p (ast/->Var 'Nat)
-                               (ast/->App (ast/->App (ast/->Var 'plus) n) (ast/->Var 'p))))
+                               (plus n (ast/->Var 'p))))
     ;; target: m
    m))

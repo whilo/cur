@@ -9,7 +9,7 @@
             [cur.std :refer [std-ctx]]
             [cur.std.list :as list]
             [cur.curnel.parser :refer [parse-term]]
-            [cur.curnel.checker :refer [type-of]]
+            [cur.curnel.checker :refer [type-of nf]]
             [cur.curnel.ast :as ast])
   (:import [cur.curnel.ast App]))
 
@@ -36,3 +36,16 @@
     (is (instance? App ty))
     (is (= motive (:fn ty)))
     (is (= target (:arg ty)))))
+
+(deftest std-ctx-plus-mult-normalization
+  "Integration tests for plus and mult normalization in std-ctx."
+  (testing "Plus normalization"
+    (is (= (parse-term 'z)
+           (nf std-ctx (parse-term '(plus z z)))))
+    (is (= (parse-term '(s z))
+           (nf std-ctx (parse-term '(plus z (s z)))))))
+  (testing "Mult normalization"
+    (is (= (parse-term 'z)
+           (nf std-ctx (parse-term '(mult z (s z))))))
+    (is (= (parse-term '(s z))
+           (nf std-ctx (parse-term '(mult (s z) (s z))))))))

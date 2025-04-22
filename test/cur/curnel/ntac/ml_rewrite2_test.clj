@@ -27,8 +27,8 @@
                                       (plus zero n))
                            n)
         expected (ast/forall* [['n Nat]] eq1)
-        ;; run proof: intro, simpl, reflexivity
-        pf      (proof std-ctx term expected intro simpl reflexivity)]
+        ;; run proof: intro, reflexivity (simpl not needed, reflexivity natively normalizes)
+        pf      (proof std-ctx term expected intro reflexivity)]
     ;; proof is [ (refl Nat n) ]
     (is (= [(ast/->App (ast/->App refl Nat) n)] pf))))
 
