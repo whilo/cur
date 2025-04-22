@@ -22,3 +22,13 @@
         ctx1 (ctx/ctx-add ctx0 'x A)]
     (defproof my-simple-proof ctx1 (ast/->Var 'x) A exact)
     (is (= [(ast/->Var 'x)] my-simple-proof))))
+
+(deftest proof-incomplete
+  (testing "proof without tactics throws on incomplete proof"
+    (let [A    (ast/->Var 'A)
+          x    (ast/->Var 'x)
+          ctx0 (ctx/mk-empty-ctx)
+          ctx1 (ctx/ctx-add ctx0 'x A)]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Proof incomplete"
+                            (proof ctx1 x A))))))

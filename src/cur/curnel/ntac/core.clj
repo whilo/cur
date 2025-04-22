@@ -9,7 +9,8 @@
             [cur.curnel.checker :as chk]
             [cur.curnel.ntac.ctx :as ctx]
             [cur.std :refer [std-ctx]])
-  (:import [cur.curnel.ast Var Universe Pi Lambda App Sigma Pair Fst Snd Let Elim]))
+  (:import [cur.curnel.ast Var Universe Pi Lambda App Sigma Pair Fst Snd Let Elim]
+           [cur.curnel.ntac.ctx Ctx]))
 
 ;; A single proof goal: context, term to prove, expected type
 (defrecord Goal [ctx term expected apply-fn])
@@ -311,6 +312,28 @@
        (mapcat cur.curnel.ntac.core/simpl)
        (mapcat cur.curnel.ntac.core/reflexivity)))
 
+;; Tactic: rewrite under Pi-binder
+(defn rewrite-forall
+  "Apply rewrite eq-proof under the leading Pi in goal's expected type."
+  [eq-proof state]
+  (let [{:keys [goals proof]} state]
+    (if (empty? goals)
+      []
+      (let [goal       (first goals)
+            rest-goals (vec (rest goals))
+            {:keys [ctx term expected]} goal]
+        (if (instance? Pi expected)
+          (let [{:keys [param domain codomain]} expected
+                sub-goal     (->Goal ctx term codomain nil)
+                sub-state    (->TacticState [sub-goal] proof)
+                sub-results  (rewrite eq-proof sub-state)]
+            (for [st sub-results]
+              (let [new-g (first (:goals st))
+                    new-exp (ast/->Pi param domain (:expected new-g))]
+                (->TacticState (cons (->Goal ctx term new-exp nil) rest-goals)
+                                (:proof st)))))
+          (throw (ex-info "rewrite-forall: expected type is not Pi" {:expected expected})))))))
+
 (def by-ml-rewrite ml-rewrite)
 
 (defn inversion
@@ -380,6 +403,51 @@
 ;; Aliases for DSL rewriting tactics
 (def by-rewrite rewrite)
 (def by-rewriteL rewriteR)
+;; Tactic: rewrite inside a hypothesis
+(defn rewrite-in
+  "Rewrite hypothesis `h-name` using equality proof `eq-proof`.
+   `eq-proof` must have type (== A lhs rhs).
+   In the first goal of `state`, replace the type of `h-name` in the context by substituting `lhs` → `rhs`."
+  [eq-proof h-name state]
+  (let [goals (:goals state)
+        proof (:proof state)]
+    (if (empty? goals)
+      []
+      (let [goal       (first goals)
+            rest-goals (vec (rest goals))
+            {:keys [ctx term expected]} goal
+            ;; original hypothesis type
+            h-ty      (ctx/ctx-lookup ctx h-name)
+            ;; determine lhs and rhs from the equality proof
+            [lhs rhs]
+            (cond
+              ;; refl proof AST: (App (App (Var 'refl) A) x)
+              (and (instance? App eq-proof)
+                   (let [mid  (:fn eq-proof)
+                         head (:fn mid)]
+                     (and (instance? App mid)
+                          (instance? Var head)
+                          (= 'refl (:name head)))))
+              (let [mid (:fn eq-proof)]
+                [(:arg mid) (:arg eq-proof)])
+              ;; hypothesis variable proof
+              (instance? Var eq-proof)
+              (let [ty  (ctx/ctx-lookup ctx (:name eq-proof))
+                    mid (:fn ty)]
+                [(:arg mid) (:arg ty)])
+              :else
+              (throw (ex-info "rewrite-in: eq-proof is not equality proof"
+                              {:eq-proof eq-proof})))
+            ;; substitute in hypothesis type
+            new-h-ty (subst-term h-ty lhs rhs)
+            ;; update context: Ctx or plain map
+            new-ctx   (if (instance? Ctx ctx)
+                        (-> ctx
+                            (ctx/ctx-remove h-name)
+                            (ctx/ctx-add    h-name new-h-ty))
+                        (assoc ctx h-name new-h-ty))
+            new-goal  (->Goal new-ctx term expected nil)]
+        [(->TacticState (cons new-goal rest-goals) proof)]))))
 
 ;; Tactic that moves a hypothesis into the goal as a Pi-abstraction.
 (defn generalize
