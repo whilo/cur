@@ -138,46 +138,80 @@
             co*  (nf (assoc ctx param dom*) codomain)]
         (ast/->Pi param dom* co*))
 
-              ;; Applications
+      ;; Applications
       (instance? App t*)
       (let [{:keys [fn arg]} t*
-            f* (nf ctx fn)
-            a* (nf ctx arg)]
+            f*  (nf ctx fn)
+            a*  (nf ctx arg)]
         (ast/->App f* a*))
 
-              ;; Elim: lookup the raw InductiveType in ctx and do a fold
+      ;; Sigma types: normalize components
+      (instance? Sigma t*)
+      (let [{:keys [param fst-type snd-type]} t*
+            fst* (nf ctx fst-type)
+            snd* (nf (assoc ctx param fst*) snd-type)]
+        (ast/->Sigma param fst* snd*))
+
+      ;; Pairs: normalize fields
+      (instance? Pair t*)
+      (ast/->Pair (nf ctx (:fst t*))
+                 (nf ctx (:snd t*)))
+
+      ;; First projection: reduce if possible
+      (instance? Fst t*)
+      (let [p* (nf ctx (:pair t*))]
+        (if (instance? Pair p*)
+          (nf ctx (:fst p*))
+          (ast/->Fst p*)))
+
+      ;; Second projection: reduce if possible
+      (instance? Snd t*)
+      (let [p* (nf ctx (:pair t*))]
+        (if (instance? Pair p*)
+          (nf ctx (:snd p*))
+          (ast/->Snd p*)))
+
+      ;; Eliminator (fold) for an inductive type
       (instance? Elim t*)
       (let [{:keys [name motive methods target]} t*
+            ;; Lookup the raw inductive declaration
             decls (:__inductive ctx)
             decl  (when (map? decls) (get decls name))]
-        (let [targ* (nf ctx target)]
-          ;; zero-case: if scrutinee matches first constructor, return its method
+        (let [;; First normalize the scrutinee
+              targ*      (nf ctx target)
+              constructors (:constructors decl)
+              ctor-names (mapv :name constructors)]
           (if (and decl
-                   (= (:name targ*) (-> decl :constructors first :name)))
-            ;; normalize the first (zero-case) method
-            (nf ctx (first methods))
-            ;; otherwise, generic elimination
-            (if decl
-              (let [mot*        (nf ctx motive)
-                    meths*      (mapv #(nf ctx %) methods)
-                    [ctor args] (decompose-app targ*)
-                    ctor-name   (when (instance? Var ctor) (:name ctor))
-                    idx         (->> (:constructors decl)
-                                     (map :name)
-                                     (map-indexed vector)
-                                     (some (fn [[i nm]] (when (= nm ctor-name) i))))
-                    method      (nth meths* idx)
-                    param-cnt   (count (:params decl))
-                    data-args   (subvec args param-cnt)
-                    rec-args    (mapv (fn [a]
-                                        (nf ctx (ast/->Elim name mot* meths* a)))
-                                      (drop param-cnt args))
-                    result      (reduce ast/->App method (concat data-args rec-args))]
-                (nf ctx result))
-              targ*))))
-
-              ;; Fallback
-      :else t*)))
+                   (instance? Var targ*)
+                   ;; zero‐case: scrutinee is exactly a constructor var
+                   (some #{(:name targ*)} ctor-names))
+            ;; Dispatch to the matching method
+            (let [idx    (.indexOf ctor-names (:name targ*))
+                  method (nth methods idx)]
+              (nf ctx method))
+            ;; Otherwise do the generic recursor elimination
+            (let [mot*        (nf ctx motive)
+                  meths*      (mapv #(nf ctx %) methods)
+                  [ctor args] (decompose-app targ*)
+                  ctor-name   (when (instance? Var ctor) (:name ctor))
+                  idx2        (.indexOf ctor-names ctor-name)
+                  method2     (nth meths* idx2)
+                  ;; drop the fixed parameters
+                  param-cnt   (count (:params decl))
+                  data-args   (subvec args 0 param-cnt)
+                  rec-args    (vec (drop param-cnt args))
+                  applied (reduce ast/->App method2 data-args)
+                  ;; Now for each constructor arg, in original order
+                  final-app
+                  (reduce
+                   (fn [f a]
+                        ;; feed raw arg then its recursive result
+                     (-> f
+                         (ast/->App a)
+                         (ast/->App (nf ctx (ast/->Elim name mot* meths* a)))))
+                   applied
+                   rec-args)]
+              (nf ctx final-app))))))))
 
 ;;-----------------------------------------------------------------
 ;; 5) Alpha‐equivalence & definitional equality

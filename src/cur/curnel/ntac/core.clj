@@ -400,42 +400,85 @@
   [h state]
   (destruct h state))
 
-;; Tactic: induction on a Nat hypothesis, yielding base and step cases
-(defn induction
-  "Perform induction on hypothesis `h-term` of type Nat.
-   Splits into base case (h = z) and step case (h = s x) with induction hypothesis `IH`."
-  [h-term state]
+;; Tactic: admit any goal with a placeholder proof term
+(defn admit
+  "Discharge the current goal by inserting a placeholder 'admit' term into the proof."
+  [state]
   (let [goals (:goals state)
         proof (:proof state)]
     (if (empty? goals)
       []
-      (let [goal       (first goals)
-            rest-goals (vec (rest goals))
-            {:keys [ctx term expected]} goal
-            h-name     (:name h-term)
-            h-ty       (ctx/ctx-lookup ctx h-name)]
-        ;; check hypothesis type
-        (when-not (and (instance? Var h-ty)
-                       (= 'Nat (:name h-ty)))
-          (throw (ex-info "induction: hypothesis is not Nat"
-                          {:h h-term :h-ty h-ty})))
-        ;; Base case: remove h
-        (let [ctx0    (ctx/ctx-remove ctx h-name)
-              g-base  (->Goal ctx0 term expected nil)
-              st-base (->TacticState (conj rest-goals g-base) proof)
-              ;; Step case: remove h, bind x:Nat, bind IH for expected at x
-              x-name  'x
-              ctx1    (-> ctx
-                          (ctx/ctx-remove h-name)
-                          (ctx/ctx-add x-name (ast/->Var 'Nat)))
-              ;; compute IH type by substituting h -> x in expected
-              lhs     h-term
-              rhs     (ast/->Var x-name)
-              ih-type (subst-term expected lhs rhs)
-              ctx2    (ctx/ctx-add ctx1 'IH ih-type)
-              g-step  (->Goal ctx2 term expected nil)
-              st-step (->TacticState (conj rest-goals g-step) proof)]
-          [st-base st-step])))))
+      (let [rest-goals (vec (rest goals))
+            placeholder (ast/->Var 'admit)
+            new-state (->TacticState rest-goals (conj proof placeholder))]
+        [new-state]))))
+
+
+;; Tactic: generic induction on any inductive hypothesis
+
+
+(defn induction
+  "For hypothesis `h-term`, generate one branch per constructor of its inductive type:
+   - Base branch: drop `h-term` from the NTac context.
+   - Recursive branch (if the constructor recurses): drop `h-term`, bind the recursive
+     argument as `rp`, then bind an induction hypothesis `IH` of type
+     (subst expected h-term rp), and keep the same goal."
+  [h-term state]
+  (let [goals      (:goals state)
+        proof      (:proof state)]
+    (if (empty? goals)
+      []
+      (let [{:keys [ctx term expected]} (first goals)
+            rest-goals                (vec (rest goals))
+            h-name                    (:name h-term)
+            ;; look up the provable type of h-term
+            h-ty                      (ctx/ctx-lookup ctx h-name)
+            ;; extract the head symbol of h-ty
+            [ind-head _]              (chk/decompose-app h-ty)
+            ind-name                  (:name ind-head)
+            ;; raw inductive decls in std-ctx
+            decls                     (get std-ctx :__inductive)
+            decl                      (and (map? decls) (get decls ind-name))
+            _                         (when-not decl
+                                        (throw (ex-info "induction: not an inductive hypothesis"
+                                                        {:h h-term :h-ty h-ty})))
+            ctors                     (:constructors decl)]
+        ;; for each constructor produce 1 or 2 branches
+        (mapcat
+         (fn [{ctor-name :name ctor-ty :type}]
+           (let [;; skip over the fixed parameters in ctor-ty
+                 pcount     (count (:params decl))
+                 body       (loop [t ctor-ty n pcount]
+                              (if (and (pos? n) (instance? Pi t))
+                                (recur (:codomain t) (dec n))
+                                t))
+                  ;; base branch: simply drop the hypothesis
+                 ctx-base   (ctx/ctx-remove ctx h-name)
+                 st-base    (->TacticState
+                             (conj rest-goals (->Goal ctx-base term expected nil))
+                             proof)]
+             (if-not (instance? Pi body)
+                ;; nonrecursive constructor => only the base case
+               [st-base]
+                ;; recursive constructor => only the recursive branch
+               (let [rp       (:param body)
+                     dom      (:domain body)
+                      ;; remove h-term and bind the recursive param rp
+                     ctx1     (-> ctx
+                                  (ctx/ctx-remove h-name)
+                                  (ctx/ctx-add rp dom))
+                      ;; compute IH type by substituting h-term -> rp in expected
+                     ih-ty    (subst-term expected h-term (ast/->Var rp))
+                      ;; bind IH
+                     ctx2     (ctx/ctx-add ctx1 'IH ih-ty)
+                     st-step  (->TacticState
+                               (conj rest-goals (->Goal ctx2 term expected nil))
+                               proof)]
+                 [st-step]))))
+         ctors)))))
+
+;; alias for DSL
+(def by-induction induction)
 
 ;; Aliases for DSL rewriting tactics
 (def by-rewrite rewrite)

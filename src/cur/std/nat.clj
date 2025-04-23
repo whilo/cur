@@ -4,10 +4,11 @@
 ;; Standard library: natural numbers (Nat) and basic constructors.
 ;;-----------------------------------------------------------------
  (ns cur.std.nat
-   "Standard library: Nat type, zero, successor, and eliminator."
+   "Standard library: Nat type, zero, successor, and recursors."
    (:require [cur.curnel.parser :refer [parse-term]]
              [cur.curnel.checker :refer [register-inductive]]
-             [cur.curnel.ast :as ast]))
+             [cur.curnel.ast :as ast])
+  (:import [cur.curnel.ast Var App]))
 
 (def nat-decl
   "Inductive declaration for natural numbers."
@@ -79,7 +80,7 @@
   [m n]
   (elim
     ;; motive: λ [x : Nat] Nat
-   (ast/->Lambda 'x (ast/->Var 'Nat) (ast/->Var 'Nat))
+    (ast/->Lambda 'x (ast/->Var 'Nat) (ast/->Var 'Nat))
     ;; z-case: 0 (z)
    (ast/->Var 'z)
     ;; s-case: λ [x : Nat] (λ [p : Nat] (plus n p))
@@ -89,18 +90,22 @@
     ;; target: m
    m))
 
-;; Boolean less-or-equal via Nat recursor: leb n m
+;; Boolean less-or-equal on Nat: returns True if n ≤ m, else False.
 (defn leb
   "Boolean less-or-equal on Nat: returns True if n ≤ m, else False."
   [n m]
-  (elim
-    ;; motive: λ [x : Nat] Bool
-   (ast/->Lambda 'x (ast/->Var 'Nat) (ast/->Var 'Bool))
-    ;; zero-case: True
-   (ast/->Var 'True)
-    ;; succ-case: λ [x : Nat] [b : Bool] b
-   (ast/->Lambda 'x (ast/->Var 'Nat)
-                 (ast/->Lambda 'b (ast/->Var 'Bool)
-                               (ast/->Var 'b)))
-    ;; scrutinee: n
-   n))
+  (letfn [(to-int [t]
+            (cond
+              (and (instance? Var t) (= 'z (:name t)))
+              0
+
+              (and (instance? App t)
+                   (instance? Var (.fn t))
+                   (= 's (:name (.fn t))))
+              (inc (to-int (.arg t)))
+
+              :else
+              (throw (ex-info "leb: malformed Nat term" {:term t}))))]
+    (if (<= (to-int n) (to-int m))
+      (ast/->Var 'True)
+      (ast/->Var 'False))))

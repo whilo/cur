@@ -100,6 +100,12 @@
               mult-fn (do (require 'cur.std.nat)
                           (ns-resolve 'cur.std.nat 'mult))]
           (mult-fn (parse-term m) (parse-term n)))
+       ;; Boolean less-or-equal on Nat: (leb n m) via stdlib builder
+        (= op 'leb)
+        (let [[n m] args
+              leb-fn (do (require 'cur.std.nat)
+                          (ns-resolve 'cur.std.nat 'leb))]
+          (leb-fn (parse-term n) (parse-term m)))
 
 
         ;; Application: (f x y ...) => (((f x) y) ...)
